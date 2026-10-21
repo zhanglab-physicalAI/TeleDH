@@ -500,6 +500,26 @@ has its own [README](data/README.md) describing each measurement file.
 | [docs/tactile.md](docs/tactile.md) | DH116 tactile sensor ids, taxel layout and API notes |
 | [data/README.md](data/README.md) | each measurement file under `data/` |
 
+### Vendor resources
+
+The DH116 is made by Shenzhen Lingqiao Drive and Control Technology (Leadtron
+in its own manuals) and sold as the Leadshine DH116. What this repository
+bundles, and where it came from:
+
+| resource | bundled copy | source |
+|---|---|---|
+| DH116 / DH116P user manual | [docs/DH116_user_manual.pdf](docs/DH116_user_manual.pdf) | [Leadshine store (PDF)](https://store.leadshine.com/cdn/shop/files/DH116_DH116P_Series_Dexterous_User_Manual.pdf) |
+| LHandProLib SDK (C++ with Python examples, RS485 / CAN FD / EtherCAT) | `third_party/LHandProLib-API-Linux-20260727/` | [SDK manual (PDF)](https://store.leadshine.com/cdn/shop/files/DH116S_LHandProLib_SDK_Manual.pdf); packages are distributed by the vendor and resellers |
+| LHandPro host software (Windows, for wiring checks) | not bundled | [software manual (PDF)](https://store.leadshine.com/cdn/shop/files/DH116_DH116P_LHandPro_Software_User_Manual.pdf) |
+| URDF and MJCF models, left and right hand | `third_party/DH116_URDF_MJCF_Files/` | ships with the SDK package |
+| product page with the current SDK, URDF and ROS 2 downloads | - | [OpenELAB: Leadshine DH116](https://openelab.io/sv/products/leadshine-dh116-robotic-dexterous-hand) |
+
+The user manual notes that units built before 2026-02-10 need the older
+resource packages; the SDK bundled here (`20260727`) is the one this hand
+was tested with. The vendor packages are kept exactly as shipped (see
+`.gitattributes`); the only change this project makes is the runtime
+`--no-serial-flush` patch applied in memory by [sdk.py](telehand/sdk.py).
+
 ## Related projects
 
 Two other retargeting stacks are checked out here so that all three can be
