@@ -46,11 +46,26 @@ def run(args) -> int:
             continue
         viz.draw_skeleton(frame, reading.landmarks_2d if reading else None)
         rate = seen / max(frames, 1)
-        cv2.putText(frame, f"detected {seen}/{frames} ({rate:4.0%})", (10, 26),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                    (90, 200, 90) if reading else (60, 60, 235), 2, cv2.LINE_AA)
-        cv2.putText(frame, f"{duration - elapsed:3.0f}s left - q to stop", (10, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.putText(
+            frame,
+            f"detected {seen}/{frames} ({rate:4.0%})",
+            (10, 26),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (90, 200, 90) if reading else (60, 60, 235),
+            2,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            frame,
+            f"{duration - elapsed:3.0f}s left - q to stop",
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
         cv2.imshow("telehand check", frame)
         if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
             break
@@ -65,13 +80,11 @@ def run(args) -> int:
     if last is not None:
         print(f"  handedness: {last.handedness}")
         if last.handedness != args.hand:
-            print(f"\n  NOTE: tracking your {last.handedness} hand, but --hand is "
-                  f"{args.hand}.")
+            print(f"\n  NOTE: tracking your {last.handedness} hand, but --hand is {args.hand}.")
             print("  MediaPipe labels handedness assuming a mirrored, selfie-style")
             print("  view, which --mirror (on by default) provides -- so the label")
             print(f"  matches reality: you held up your {last.handedness.lower()} hand.")
-            print(f"  Either hold up your {args.hand.lower()} hand, or run with "
-                  f"--hand {last.handedness}.")
+            print(f"  Either hold up your {args.hand.lower()} hand, or run with --hand {last.handedness}.")
             print("  The robot is a RIGHT hand. Driving it with your left still works")
             print("  (only per-finger curl is used, which has no handedness), but the")
             print("  thumb will feel mirrored.\n")
@@ -89,8 +102,8 @@ def run(args) -> int:
         hand.connect(home=False)
         print(f"  connected on {args.port} @ {args.baud}")
         for i, (name, lim) in enumerate(zip(JOINT_NAMES, hand.limits)):
-            print(f"    {i+1} {name:<16} {lim.min_angle:6.1f} .. {lim.max_angle:6.1f}")
-        print(f"  measured angles: {[round(a,1) for a in hand.read_angles()]}")
+            print(f"    {i + 1} {name:<16} {lim.min_angle:6.1f} .. {lim.max_angle:6.1f}")
+        print(f"  measured angles: {[round(a, 1) for a in hand.read_angles()]}")
         print(f"  alarms:          {hand.alarms()}")
 
     print("\n== pose library ==")

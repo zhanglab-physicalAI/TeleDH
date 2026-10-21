@@ -15,41 +15,51 @@ fitted thumb curve, and the abduction-dependent flexion envelope.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
-from .kinematics import (HandModel, FINGER_ORDER, FIRMWARE_MAX_DEG,
-                         thumb_flex_max)
+from .kinematics import FINGER_ORDER, FIRMWARE_MAX_DEG, HandModel, thumb_flex_max
 from .profile import HandProfile
 
 WRIST, THUMB_TIP = 0, 4
 THUMB_CMC, THUMB_MCP, THUMB_IP = 1, 2, 3
-DIR_SCALE = 0.04   # metres: a fully wrong thumb direction costs as much as a 40 mm miss
+DIR_SCALE = 0.04  # metres: a fully wrong thumb direction costs as much as a 40 mm miss
 MCP = {"index": 5, "middle": 9, "ring": 13, "pinky": 17}
 TIP = {"thumb": 4, "index": 8, "middle": 12, "ring": 16, "pinky": 20}
 FINGERS = ["thumb"] + FINGER_ORDER
 
 
 class FKRetargeter:
-    def __init__(self, limits, *, iters: int = 6, damping: float = 0.15,
-                 w_thumb: float = 2.0, w_palm: float = 1.0, smoothing: float = 0.35,
-                 deadband_deg: float = 0.8, direction: str = "R",
-                 near_dist: float = 0.05, reg_open: float = 5e-5,
-                 gate_floor: float = 0.15, w_dir: float = 1.5,
-                 profile: Optional[HandProfile] = None) -> None:
+    def __init__(
+        self,
+        limits,
+        *,
+        iters: int = 6,
+        damping: float = 0.15,
+        w_thumb: float = 2.0,
+        w_palm: float = 1.0,
+        smoothing: float = 0.35,
+        deadband_deg: float = 0.8,
+        direction: str = "R",
+        near_dist: float = 0.05,
+        reg_open: float = 5e-5,
+        gate_floor: float = 0.15,
+        w_dir: float = 1.5,
+        profile: HandProfile | None = None,
+    ) -> None:
         self.model = HandModel(direction)
         self.limits = limits
         self.iters, self.damping = iters, damping
         self.w_thumb, self.w_palm = w_thumb, w_palm
         self.smoothing, self.deadband = smoothing, deadband_deg
-        self.near_dist = near_dist      # metres; thumb-finger weight is full inside this
-        self.reg_open = reg_open        # metres-per-degree pull toward the open pose
-        self.gate_floor = gate_floor    # thumb-finger weight never fades below this fraction
-        self.w_dir = w_dir              # weight of the thumb pointing-direction term
-        self.q = np.zeros(6)                 # warm start, firmware degrees
-        self._filtered: Optional[np.ndarray] = None
-        self._held: Optional[np.ndarray] = None
+        self.near_dist = near_dist  # metres; thumb-finger weight is full inside this
+        self.reg_open = reg_open  # metres-per-degree pull toward the open pose
+        self.gate_floor = gate_floor  # thumb-finger weight never fades below this fraction
+        self.w_dir = w_dir  # weight of the thumb pointing-direction term
+        self.q = np.zeros(6)  # warm start, firmware degrees
+        self._filtered: np.ndarray | None = None
+        self._held: np.ndarray | None = None
         self.last_residual = float("nan")
         self.scale = float("nan")
 
@@ -66,15 +76,17 @@ class FKRetargeter:
         self.R_robot = self.human_frame(fake, "Right")
         self.robot_palm_width = float(np.linalg.norm(bases["index"] - bases["pinky"]))
         # Robot finger lengths at zero, for per-finger scaling against a profile.
-        self.robot_len = {f: float(np.linalg.norm(self.model.chain_points(f, zero[f])[-1] - bases[f]))
-                          for f in FINGER_ORDER}
+        self.robot_len = {
+            f: float(np.linalg.norm(self.model.chain_points(f, zero[f])[-1] - bases[f])) for f in FINGER_ORDER
+        }
         tc = self.model.chain_points("thumb", zero["thumb"])
         self.robot_len["thumb"] = float(np.linalg.norm(tc[-1] - tc[0]))
         self.profile = profile
         self.finger_scale = None
         if profile is not None:
-            self.finger_scale = {f: self.robot_len[f] / max(profile.finger_len.get(f, 0.0), 1e-6)
-                                 for f in FINGERS}
+            self.finger_scale = {
+                f: self.robot_len[f] / max(profile.finger_len.get(f, 0.0), 1e-6) for f in FINGERS
+            }
 
     # ------------------------------------------------------------ targets
 
@@ -92,16 +104,21 @@ class FKRetargeter:
         # Orient the normal out of the palm: for a right hand that is y0 x z0.
         if np.dot(n, np.cross(y0, z0)) < 0:
             n = -n
-        z = z0 - n * np.dot(z0, n); z /= np.linalg.norm(z) + 1e-9
-        y = np.cross(z, n); y /= np.linalg.norm(y) + 1e-9
+        z = z0 - n * np.dot(z0, n)
+        z /= np.linalg.norm(z) + 1e-9
+        y = np.cross(z, n)
+        y /= np.linalg.norm(y) + 1e-9
         x = n
-        if handedness == "Left":       # mirror so a left hand drives the right robot
+        if handedness == "Left":  # mirror so a left hand drives the right robot
             x = -x
         return np.stack([x, y, z], axis=1)
 
     def targets(self, pts: np.ndarray, handedness: str):
         R = self.human_frame(pts, handedness)
-        to_robot = lambda v: R.T @ v
+
+        def to_robot(v):
+            return R.T @ v
+
         # Pose-invariant scale: palm width, not a finger length (which shortens
         # as the finger curls and would inflate every target on a fist).
         h_width = np.linalg.norm(pts[MCP["index"]] - pts[MCP["pinky"]])
@@ -113,22 +130,27 @@ class FKRetargeter:
         sc = self.finger_scale or {f: self.scale for f in FINGERS}
         tips = {f: to_robot(pts[TIP[f]] - palm) * sc[f] for f in FINGERS}
         vecs, weights = [], []
-        for f in FINGER_ORDER:                       # thumb -> finger: what a grasp is
+        for f in FINGER_ORDER:  # thumb -> finger: what a grasp is
             v = tips[f] - tips["thumb"]
             # A thumb-to-finger vector only carries grasp intent when the two
             # are close. Far apart it mostly encodes hand proportions the robot
             # cannot reproduce, so let it fade rather than drag the thumb.
             gate = float(np.clip(self.near_dist / max(np.linalg.norm(v), 1e-6), self.gate_floor, 1.0))
-            vecs.append(v); weights.append(self.w_thumb * gate)
-        for a, b in zip(FINGER_ORDER, FINGER_ORDER[1:]):   # neighbouring fingers
-            vecs.append(tips[b] - tips[a]); weights.append(0.5 * self.w_palm)
-        for f in FINGER_ORDER:                       # palm -> finger tip: curl
-            vecs.append(tips[f]); weights.append(self.w_palm)
+            vecs.append(v)
+            weights.append(self.w_thumb * gate)
+        for a, b in zip(FINGER_ORDER, FINGER_ORDER[1:]):  # neighbouring fingers
+            vecs.append(tips[b] - tips[a])
+            weights.append(0.5 * self.w_palm)
+        for f in FINGER_ORDER:  # palm -> finger tip: curl
+            vecs.append(tips[f])
+            weights.append(self.w_palm)
         # Thumb *direction* (not position): the two thumbs sit differently on
         # their palms, but "which way is it pointing" transfers. This is what
         # tells a thumbs-up from a thumb folded over a fist.
-        tdir = to_robot(pts[TIP["thumb"]] - pts[THUMB_CMC]); tdir /= np.linalg.norm(tdir) + 1e-9
-        vecs.append(tdir * DIR_SCALE); weights.append(self.w_dir)
+        tdir = to_robot(pts[TIP["thumb"]] - pts[THUMB_CMC])
+        tdir /= np.linalg.norm(tdir) + 1e-9
+        vecs.append(tdir * DIR_SCALE)
+        weights.append(self.w_dir)
         # No palm -> thumb term: the two thumbs sit differently on their palms,
         # and pinning the robot thumb to the human thumb's position fights the
         # thumb-to-finger vectors that actually matter.
@@ -138,13 +160,13 @@ class FKRetargeter:
 
     def robot_vecs(self, q_fw: Sequence[float]) -> np.ndarray:
         joints = self.model.joints_from_firmware(q_fw)
-        tips = {f: self.R_robot.T @ (self.model.fingertip(f, joints[f]) - self.palm_centre)
-                for f in FINGERS}
+        tips = {f: self.R_robot.T @ (self.model.fingertip(f, joints[f]) - self.palm_centre) for f in FINGERS}
         out = [tips[f] - tips["thumb"] for f in FINGER_ORDER]
         out += [tips[b] - tips[a] for a, b in zip(FINGER_ORDER, FINGER_ORDER[1:])]
         out += [tips[f] for f in FINGER_ORDER]
         base = self.R_robot.T @ (self.model.chain_points("thumb", joints["thumb"])[1] - self.palm_centre)
-        tdir = tips["thumb"] - base; tdir /= np.linalg.norm(tdir) + 1e-9
+        tdir = tips["thumb"] - base
+        tdir /= np.linalg.norm(tdir) + 1e-9
         out.append(tdir * DIR_SCALE)
         return np.array(out)
 
@@ -174,13 +196,14 @@ class FKRetargeter:
             # joint pinned at a limit -- whose finite-difference column is zero --
             # cannot make the system singular. The reg_open term is a weak pull
             # toward the open pose; it decides directions the targets leave free.
-            H = JtJ + (self.damping * JtJ.trace() / 6 + 1e-6 + self.reg_open ** 2) * np.eye(6)
-            g = J.T @ base + (self.reg_open ** 2) * q
+            H = JtJ + (self.damping * JtJ.trace() / 6 + 1e-6 + self.reg_open**2) * np.eye(6)
+            g = J.T @ base + (self.reg_open**2) * q
             step = np.linalg.lstsq(H, -g, rcond=None)[0]
             step = np.clip(step, -12.0, 12.0)
             q = self.clamp(q + step)
-        self.last_residual = float(np.linalg.norm((self.robot_vecs(q) - target).ravel() * w)
-                                   / np.sqrt(len(target)))
+        self.last_residual = float(
+            np.linalg.norm((self.robot_vecs(q) - target).ravel() * w) / np.sqrt(len(target))
+        )
         return q
 
     def solve_multistart(self, target, weights, starts=None):
@@ -208,7 +231,7 @@ class FKRetargeter:
         clear = min(np.linalg.norm(pts[TIP[f]] - pts[THUMB_TIP]) for f in FINGER_ORDER) * self.scale > 0.06
         return bool(straight and clear)
 
-    def __call__(self, pts: np.ndarray, handedness: str = "Right") -> List[float]:
+    def __call__(self, pts: np.ndarray, handedness: str = "Right") -> list[float]:
         pts = np.asarray(pts, dtype=np.float64)
         target, weights = self.targets(pts, handedness)
         self.q = self.solve(target, weights, self.q)
@@ -240,18 +263,29 @@ class PinchCloser:
     is held while the intent lasts and released afterwards.
     """
 
-    def __init__(self, intent_mm: float = 35.0, step_deg: float = 1.5, max_extra_deg: float = 10.0,
-                 pressure_on: float = 0.03, stall_deg: float = 3.0) -> None:
+    def __init__(
+        self,
+        intent_mm: float = 35.0,
+        step_deg: float = 1.5,
+        max_extra_deg: float = 10.0,
+        pressure_on: float = 0.03,
+        stall_deg: float = 3.0,
+    ) -> None:
         self.intent_mm = intent_mm
         self.step = step_deg
         self.max_extra = max_extra_deg
         self.pressure_on = pressure_on
         self.stall_deg = stall_deg
-        self.extra = np.zeros(4)          # index, middle, ring, pinky
+        self.extra = np.zeros(4)  # index, middle, ring, pinky
         self.contact = np.zeros(4, bool)
 
-    def update(self, thumb_finger_mm: Sequence[float], commanded: Sequence[float],
-               measured: Optional[Sequence[float]], thumb_pressure: float) -> np.ndarray:
+    def update(
+        self,
+        thumb_finger_mm: Sequence[float],
+        commanded: Sequence[float],
+        measured: Sequence[float] | None,
+        thumb_pressure: float,
+    ) -> np.ndarray:
         # Only the finger nearest the thumb can be the pinch target: MediaPipe's
         # fingertip depth is coarse, so a plain distance threshold fires on
         # neighbours too.
@@ -259,14 +293,15 @@ class PinchCloser:
         for i in range(4):
             intent = i == nearest and thumb_finger_mm[i] < self.intent_mm
             j = 2 + i
-            stalled = measured is not None and (commanded[j] - measured[j]) > self.stall_deg \
-                and self.extra[i] > 0
+            stalled = (
+                measured is not None and (commanded[j] - measured[j]) > self.stall_deg and self.extra[i] > 0
+            )
             felt = thumb_pressure >= self.pressure_on and self.extra[i] > 0
             if not intent:
                 self.extra[i] = max(0.0, self.extra[i] - 2 * self.step)
                 self.contact[i] = False
             elif felt:
-                self.contact[i] = True          # hold what we have
+                self.contact[i] = True  # hold what we have
             elif stalled:
                 # Blocked but the thumb tip feels nothing: the finger is jammed
                 # against the thumb's side. Ease off instead of grinding.

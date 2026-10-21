@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -32,6 +31,7 @@ def save_view(yaw: float, pitch: float) -> None:
     ensure_state_dir()
     VIEW_FILE.write_text(json.dumps({"yaw": yaw, "pitch": pitch}) + "\n")
 
+
 _renderer = None
 _renderer_failed = False
 
@@ -42,15 +42,17 @@ def _hand_renderer():
     if _renderer is None and not _renderer_failed:
         try:
             from .handview import HandRenderer
+
             _renderer = HandRenderer("R")
         except Exception as exc:
             _renderer_failed = True
             print(f"hand view: URDF render unavailable ({exc}); using the schematic")
     return _renderer
 
+
 PANEL_W = 560
 VIEW_W, VIEW_H = 400, 376
-VIEW_X, VIEW_Y = 8, 36        # where the hand view sits inside the panel
+VIEW_X, VIEW_Y = 8, 36  # where the hand view sits inside the panel
 SHORT = ["T.abd", "T.flex", "index", "mid", "ring", "pinky"]
 BG = (26, 24, 22)
 FG = (235, 235, 235)
@@ -65,11 +67,27 @@ CONTACT_DEEP = (60, 80, 255)
 
 # MediaPipe hand topology, for the camera overlay.
 CONNECTIONS = [
-    (0, 1), (1, 2), (2, 3), (3, 4),
-    (0, 5), (5, 6), (6, 7), (7, 8),
-    (5, 9), (9, 10), (10, 11), (11, 12),
-    (9, 13), (13, 14), (14, 15), (15, 16),
-    (13, 17), (17, 18), (18, 19), (19, 20), (0, 17),
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 4),
+    (0, 5),
+    (5, 6),
+    (6, 7),
+    (7, 8),
+    (5, 9),
+    (9, 10),
+    (10, 11),
+    (11, 12),
+    (9, 13),
+    (13, 14),
+    (14, 15),
+    (15, 16),
+    (13, 17),
+    (17, 18),
+    (18, 19),
+    (19, 20),
+    (0, 17),
 ]
 
 # Schematic finger layout: (x offset from palm centre, base length scale).
@@ -82,7 +100,7 @@ _FINGERS = [
 _SEGMENTS = (0.42, 0.32, 0.26)  # proportion of finger length per phalanx
 
 
-def draw_skeleton(frame: np.ndarray, landmarks_2d: Optional[np.ndarray]) -> None:
+def draw_skeleton(frame: np.ndarray, landmarks_2d: np.ndarray | None) -> None:
     """Overlay the tracked hand on the camera image."""
     if landmarks_2d is None:
         return
@@ -157,8 +175,7 @@ def draw_hand_schematic(canvas, cx, cy, size, angles, limits) -> None:
         cv2.circle(canvas, p, 3, (240, 240, 240), -1, cv2.LINE_AA)
 
 
-def draw_strip(canvas, x, y, w, h, angles, limits, alarms, selected=None,
-               measured=None) -> None:
+def draw_strip(canvas, x, y, w, h, angles, limits, alarms, selected=None, measured=None) -> None:
     """Six vertical bars in one row: the whole hand state in 50 px of height."""
     n = len(JOINT_NAMES)
     col = w / n
@@ -170,26 +187,40 @@ def draw_strip(canvas, x, y, w, h, angles, limits, alarms, selected=None,
         cx = int(x + col * (i + 0.5))
         top, bottom = y + 13, y + h - 13
         if selected == i:
-            cv2.rectangle(canvas, (int(x + col * i) + 2, y), (int(x + col * (i + 1)) - 2, y + h),
-                          (58, 55, 52), -1)
-        cv2.putText(canvas, name, (cx - len(name) * 3, y + 9),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.32,
-                    FG if selected == i else MUTED, 1, cv2.LINE_AA)
+            cv2.rectangle(
+                canvas, (int(x + col * i) + 2, y), (int(x + col * (i + 1)) - 2, y + h), (58, 55, 52), -1
+            )
+        cv2.putText(
+            canvas,
+            name,
+            (cx - len(name) * 3, y + 9),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.32,
+            FG if selected == i else MUTED,
+            1,
+            cv2.LINE_AA,
+        )
         cv2.rectangle(canvas, (cx - bar_w // 2, top), (cx + bar_w // 2, bottom), (58, 55, 52), -1)
         fill = int((bottom - top) * frac)
         colour = WARN if alarms and alarms[i] else ACCENT_ON
         if fill > 0:
-            cv2.rectangle(canvas, (cx - bar_w // 2, bottom - fill), (cx + bar_w // 2, bottom),
-                          colour, -1)
+            cv2.rectangle(canvas, (cx - bar_w // 2, bottom - fill), (cx + bar_w // 2, bottom), colour, -1)
         if measured is not None:
             mfrac = float(np.clip((measured[i] - lim.min_angle) / span, 0.0, 1.0))
             my = bottom - int((bottom - top) * mfrac)
             if abs(measured[i] - angles[i]) >= 2.0:
-                cv2.line(canvas, (cx - bar_w // 2 - 3, my), (cx + bar_w // 2 + 3, my),
-                         MEASURED_LABEL, 2, cv2.LINE_AA)
+                cv2.line(
+                    canvas,
+                    (cx - bar_w // 2 - 3, my),
+                    (cx + bar_w // 2 + 3, my),
+                    MEASURED_LABEL,
+                    2,
+                    cv2.LINE_AA,
+                )
         txt = f"{angles[i]:.0f}"
-        cv2.putText(canvas, txt, (cx - len(txt) * 4, y + h - 2),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, FG, 1, cv2.LINE_AA)
+        cv2.putText(
+            canvas, txt, (cx - len(txt) * 4, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.36, FG, 1, cv2.LINE_AA
+        )
 
 
 def draw_bars(canvas, x, y, w, angles, limits, alarms, selected=None) -> int:
@@ -203,13 +234,30 @@ def draw_bars(canvas, x, y, w, angles, limits, alarms, selected=None) -> int:
 
         if selected == i:
             cv2.rectangle(canvas, (x - 6, top - 3), (x + w, top + 21), (58, 55, 52), -1)
-            cv2.putText(canvas, ">", (x - 12, top + 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.42, ACCENT_OFF, 1, cv2.LINE_AA)
+            cv2.putText(
+                canvas, ">", (x - 12, top + 10), cv2.FONT_HERSHEY_SIMPLEX, 0.42, ACCENT_OFF, 1, cv2.LINE_AA
+            )
         label_colour = FG if selected == i else MUTED
-        cv2.putText(canvas, f"{i+1} " + name.replace("_", " "), (x, top + 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.36, label_colour, 1, cv2.LINE_AA)
-        cv2.putText(canvas, f"{angles[i]:.0f}/{lim.max_angle:.0f}", (x + w - 46, top + 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.38, FG, 1, cv2.LINE_AA)
+        cv2.putText(
+            canvas,
+            f"{i + 1} " + name.replace("_", " "),
+            (x, top + 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.36,
+            label_colour,
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            canvas,
+            f"{angles[i]:.0f}/{lim.max_angle:.0f}",
+            (x + w - 46, top + 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            FG,
+            1,
+            cv2.LINE_AA,
+        )
 
         by = top + 14
         cv2.rectangle(canvas, (x, by), (x + w - 52, by + 7), (58, 55, 52), -1)
@@ -220,9 +268,24 @@ def draw_bars(canvas, x, y, w, angles, limits, alarms, selected=None) -> int:
     return y + len(JOINT_NAMES) * row_h
 
 
-def render_panel(height, angles, limits, *, engaged, fps, alarms=None,
-                 tracked=False, dry_run=False, selected=None, title=None,
-                 keys=None, measured=None, yaw=None, pitch=None, zoom=1.0) -> np.ndarray:
+def render_panel(
+    height,
+    angles,
+    limits,
+    *,
+    engaged,
+    fps,
+    alarms=None,
+    tracked=False,
+    dry_run=False,
+    selected=None,
+    title=None,
+    keys=None,
+    measured=None,
+    yaw=None,
+    pitch=None,
+    zoom=1.0,
+) -> np.ndarray:
     panel = np.full((height, PANEL_W, 3), BG, np.uint8)
 
     accent = ACCENT_ON if engaged else ACCENT_OFF
@@ -230,10 +293,17 @@ def render_panel(height, angles, limits, *, engaged, fps, alarms=None,
     if dry_run:
         label += "  (DRY RUN)"
     cv2.rectangle(panel, (0, 0), (PANEL_W, 30), accent, -1)
-    cv2.putText(panel, label, (12, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                (20, 20, 20), 2, cv2.LINE_AA)
-    cv2.putText(panel, f"{fps:4.1f} fps", (PANEL_W - 78, 21),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.46, (20, 20, 20), 1, cv2.LINE_AA)
+    cv2.putText(panel, label, (12, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (20, 20, 20), 2, cv2.LINE_AA)
+    cv2.putText(
+        panel,
+        f"{fps:4.1f} fps",
+        (PANEL_W - 78, 21),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.46,
+        (20, 20, 20),
+        1,
+        cv2.LINE_AA,
+    )
 
     vx, vy = 8, 36
     contacts = []
@@ -262,16 +332,20 @@ def render_panel(height, angles, limits, *, engaged, fps, alarms=None,
                 contacts = renderer.contacts(angles, (VIEW_W, VIEW_H), **kw)
             except Exception:
                 contacts = []
-        for (px, py), depth, label in contacts:
+        for (px, py), depth, _label in contacts:
             t = min(depth / 10.0, 1.0)
             colour = tuple(int(a + (b - a) * t) for a, b in zip(CONTACT_NEAR, CONTACT_DEEP))
             radius = int(5 + 5 * t)
             cv2.circle(view, (int(px), int(py)), radius, colour, 2, cv2.LINE_AA)
             cv2.circle(view, (int(px), int(py)), 2, colour, -1, cv2.LINE_AA)
 
-        per_finger = {"index": f"{angles[2]:.0f}", "middle": f"{angles[3]:.0f}",
-                      "ring": f"{angles[4]:.0f}", "pinky": f"{angles[5]:.0f}",
-                      "thumb": f"{angles[0]:.0f}/{angles[1]:.0f}"}
+        per_finger = {
+            "index": f"{angles[2]:.0f}",
+            "middle": f"{angles[3]:.0f}",
+            "ring": f"{angles[4]:.0f}",
+            "pinky": f"{angles[5]:.0f}",
+            "thumb": f"{angles[0]:.0f}/{angles[1]:.0f}",
+        }
         for finger, (px, py) in tips.items():
             txt = per_finger.get(finger)
             if txt is None:
@@ -280,47 +354,89 @@ def render_panel(height, angles, limits, *, engaged, fps, alarms=None,
             cv2.putText(view, txt, org, cv2.FONT_HERSHEY_SIMPLEX, 0.44, (0, 0, 0), 3, cv2.LINE_AA)
             cv2.putText(view, txt, org, cv2.FONT_HERSHEY_SIMPLEX, 0.44, (120, 235, 255), 1, cv2.LINE_AA)
             cv2.circle(view, (int(px), int(py)), 3, (120, 235, 255), -1, cv2.LINE_AA)
-        panel[vy:vy + VIEW_H, vx:vx + VIEW_W] = view
+        panel[vy : vy + VIEW_H, vx : vx + VIEW_W] = view
         cv2.rectangle(panel, (vx, vy), (vx + VIEW_W, vy + VIEW_H), (58, 55, 52), 1)
         if measured is not None:
             lag = [c - m for c, m in zip(angles, measured)]
             worst = max(range(len(lag)), key=lambda i: abs(lag[i]))
             if abs(lag[worst]) >= 2.0:
-                cv2.putText(view, f"{SHORT[worst]} short {lag[worst]:+.0f} deg",
-                            (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42,
-                            MEASURED_LABEL, 1, cv2.LINE_AA)
+                cv2.putText(
+                    view,
+                    f"{SHORT[worst]} short {lag[worst]:+.0f} deg",
+                    (6, 16),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.42,
+                    MEASURED_LABEL,
+                    1,
+                    cv2.LINE_AA,
+                )
             else:
-                cv2.putText(view, "tracking", (6, 16), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.42, ACCENT_ON, 1, cv2.LINE_AA)
+                cv2.putText(
+                    view, "tracking", (6, 16), cv2.FONT_HERSHEY_SIMPLEX, 0.42, ACCENT_ON, 1, cv2.LINE_AA
+                )
     else:
-        cv2.putText(panel, "COMMANDED POSE", (vx + 4, vy + 16), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.4, MUTED, 1, cv2.LINE_AA)
+        cv2.putText(
+            panel, "COMMANDED POSE", (vx + 4, vy + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.4, MUTED, 1, cv2.LINE_AA
+        )
         draw_hand_schematic(panel, vx + VIEW_W // 2, vy + VIEW_H // 2, 200, angles, limits)
 
     sx = vx + VIEW_W + 10
-    cv2.putText(panel, "hand tracked" if tracked else "NO HAND", (sx, vy + 18),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.42, ACCENT_ON if tracked else WARN, 1, cv2.LINE_AA)
+    cv2.putText(
+        panel,
+        "hand tracked" if tracked else "NO HAND",
+        (sx, vy + 18),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.42,
+        ACCENT_ON if tracked else WARN,
+        1,
+        cv2.LINE_AA,
+    )
     if contacts:
-        cv2.putText(panel, "CONTACT", (sx, vy + 40), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.42, CONTACT_NEAR, 1, cv2.LINE_AA)
+        cv2.putText(
+            panel, "CONTACT", (sx, vy + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.42, CONTACT_NEAR, 1, cv2.LINE_AA
+        )
         for i, (_xy, depth, label) in enumerate(contacts[:3]):
-            cv2.putText(panel, f"{label} {depth:.0f}mm", (sx, vy + 58 + i * 15),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.33, CONTACT_NEAR, 1, cv2.LINE_AA)
+            cv2.putText(
+                panel,
+                f"{label} {depth:.0f}mm",
+                (sx, vy + 58 + i * 15),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.33,
+                CONTACT_NEAR,
+                1,
+                cv2.LINE_AA,
+            )
     if alarms and any(alarms):
-        cv2.putText(panel, "ALARM", (sx, vy + 40), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.44, WARN, 1, cv2.LINE_AA)
-        cv2.putText(panel, str(alarms), (sx, vy + 58), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.3, WARN, 1, cv2.LINE_AA)
+        cv2.putText(panel, "ALARM", (sx, vy + 40), cv2.FONT_HERSHEY_SIMPLEX, 0.44, WARN, 1, cv2.LINE_AA)
+        cv2.putText(panel, str(alarms), (sx, vy + 58), cv2.FONT_HERSHEY_SIMPLEX, 0.3, WARN, 1, cv2.LINE_AA)
     if keys is None:
-        keys = ["SPACE engage", "o  open hand", "c  clear alarms", "",
-                "drag   orbit view", "wheel  zoom", "dbl-clk reset",
-                "v  save view", "", "q  quit"]
+        keys = [
+            "SPACE engage",
+            "o  open hand",
+            "c  clear alarms",
+            "",
+            "drag   orbit view",
+            "wheel  zoom",
+            "dbl-clk reset",
+            "v  save view",
+            "",
+            "q  quit",
+        ]
     for i, k in enumerate(keys):
-        cv2.putText(panel, k, (sx, vy + 96 + i * 17), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.36, MUTED, 1, cv2.LINE_AA)
+        cv2.putText(panel, k, (sx, vy + 96 + i * 17), cv2.FONT_HERSHEY_SIMPLEX, 0.36, MUTED, 1, cv2.LINE_AA)
 
-    draw_strip(panel, 14, vy + VIEW_H + 8, PANEL_W - 28, height - (vy + VIEW_H) - 14,
-               angles, limits, alarms, selected, measured)
+    draw_strip(
+        panel,
+        14,
+        vy + VIEW_H + 8,
+        PANEL_W - 28,
+        height - (vy + VIEW_H) - 14,
+        angles,
+        limits,
+        alarms,
+        selected,
+        measured,
+    )
     return panel
 
 
@@ -328,8 +444,8 @@ def compose(frame, panel) -> np.ndarray:
     """Camera on the left, hand state on the right."""
     h = max(frame.shape[0], panel.shape[0])
     out = np.full((h, frame.shape[1] + panel.shape[1], 3), BG, np.uint8)
-    out[:frame.shape[0], :frame.shape[1]] = frame
-    out[:panel.shape[0], frame.shape[1]:] = panel
+    out[: frame.shape[0], : frame.shape[1]] = frame
+    out[: panel.shape[0], frame.shape[1] :] = panel
     return out
 
 
@@ -366,6 +482,7 @@ class ViewControl:
 
     def _defaults(self):
         from .handview import MJ_AZIMUTH, MJ_ELEVATION
+
         return MJ_AZIMUTH, MJ_ELEVATION
 
     def _on_mouse(self, event, x, y, flags, _param) -> None:

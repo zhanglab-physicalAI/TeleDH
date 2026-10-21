@@ -12,8 +12,8 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 # Third-party material shipped with the project rather than installed.
-VENDOR_DIR = PROJECT_ROOT / "vendor"                       # Python dependencies
-THIRD_PARTY_DIR = PROJECT_ROOT / "third_party"             # vendor SDK and robot models
+VENDOR_DIR = PROJECT_ROOT / "vendor"  # Python dependencies
+THIRD_PARTY_DIR = PROJECT_ROOT / "third_party"  # vendor SDK and robot models
 SDK_ROOT = THIRD_PARTY_DIR / "LHandProLib-API-Linux-20260727" / "x86_64"
 URDF_ROOT = THIRD_PARTY_DIR / "DH116_URDF_MJCF_Files"
 MODELS_DIR = PROJECT_ROOT / "models"
@@ -24,11 +24,14 @@ CALIBRATION_DIR = PROJECT_ROOT / "calibration"
 POSES_FILE = CALIBRATION_DIR / "poses.json"
 PROFILE_FILE = CALIBRATION_DIR / "handprofile.json"
 DIRECT_CALIBRATION_FILE = CALIBRATION_DIR / "direct_calibration.json"
+FRAMES_CALIBRATION_FILE = CALIBRATION_DIR / "frames_calibration.json"  # experimental
 
 # Measurements and recordings.
 DATA_DIR = PROJECT_ROOT / "data"
 RECORDINGS_DIR = DATA_DIR / "recordings"
 TOUCHSCAN_FILE = DATA_DIR / "touchscan.json"
+BENCHMARKS_DIR = DATA_DIR / "benchmarks"  # step-response sweeps, latency CSVs (git-ignored)
+LOGS_DIR = DATA_DIR / "logs"
 
 # Per-machine runtime state. Nothing in here is worth keeping.
 STATE_DIR = PROJECT_ROOT / ".telehand"

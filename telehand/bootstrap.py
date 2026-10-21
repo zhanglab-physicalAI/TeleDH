@@ -19,8 +19,11 @@ from .paths import PROJECT_ROOT, VENDOR_DIR
 # pin (Pinocchio) wheels use the cmeel layout: the importable package sits one
 # level below vendor/, so that directory has to be on the path as well.
 CMEEL_SITE_PACKAGES = (
-    VENDOR_DIR / "cmeel.prefix" / "lib"
-    / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+    VENDOR_DIR
+    / "cmeel.prefix"
+    / "lib"
+    / f"python{sys.version_info.major}.{sys.version_info.minor}"
+    / "site-packages"
 )
 
 

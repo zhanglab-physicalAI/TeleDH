@@ -15,7 +15,6 @@ import os
 import signal
 import time
 from pathlib import Path
-from typing import Optional
 
 from .paths import LOCK_FILE, ensure_state_dir
 
@@ -30,7 +29,7 @@ def _alive(pid: int) -> bool:
     return True
 
 
-def read_lock(path: Path = LOCK_FILE) -> Optional[dict]:
+def read_lock(path: Path = LOCK_FILE) -> dict | None:
     """Return the running session's record, clearing the file if it is stale."""
     path = Path(path)
     if not path.exists():
@@ -67,12 +66,18 @@ def hold(command: str, **details):
         raise SessionBusy(existing)
 
     ensure_state_dir()
-    LOCK_FILE.write_text(json.dumps({
-        "pid": os.getpid(),
-        "command": command,
-        "started": time.time(),
-        **details,
-    }, indent=2) + "\n")
+    LOCK_FILE.write_text(
+        json.dumps(
+            {
+                "pid": os.getpid(),
+                "command": command,
+                "started": time.time(),
+                **details,
+            },
+            indent=2,
+        )
+        + "\n"
+    )
 
     # `stop` sends SIGINT, but a plain SIGTERM should shut down just as cleanly
     # rather than killing the process with motors still enabled.

@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import ctypes
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import List, Optional, Sequence
 
 from . import sdk
 
@@ -64,6 +64,10 @@ class Hand:
         angular_velocity: float = 150.0,
         max_current: int = 500,
         stall_kick: bool = True,
+        skip_unchanged: bool = False,
+        skip_epsilon: float = 0.1,
+        resync_frames: int = 30,
+        no_serial_flush: bool = False,
     ) -> None:
         self.port = port
         self.baud = baud
@@ -79,14 +83,33 @@ class Hand:
         # joint has been steady and short of a steady target, briefly overshoot
         # the command to unstick it, then restore.
         self.stall_kick = stall_kick
-        self._kick_state = {}   # joint -> dict(since, until, cooldown_until)
+        self._kick_state = {}  # joint -> dict(since, until, cooldown_until)
         self.kick_count = [0] * NUM_JOINTS
+
+        # Each set_target_angle is its own serial transaction, so a joint whose
+        # command has not moved is a transaction bought for nothing. Comparison
+        # is against the value last actually *sent*, not the last requested one,
+        # so a stall kick (which sends something other than the target) is seen
+        # as a change and so is its restoration.
+        self.skip_unchanged = skip_unchanged
+        self.skip_epsilon = skip_epsilon
+        # RS485 here is fire-and-forget: a lost frame is never retransmitted.
+        # If one is dropped and the command then never changes, that joint
+        # would hold a stale target indefinitely. A periodic full resend bounds
+        # that to resync_frames (~1 s at 30 Hz) at the cost of one expensive
+        # frame in every resync_frames. Set 0 to disable.
+        self.resync_frames = resync_frames
+        self.no_serial_flush = no_serial_flush
+        self._last_sent = None  # what each joint was last commanded with
+        self._writes_since_resync = 0
+        self.last_tx_count = 0  # serial transactions in the last write
+        self.tx_total = 0
 
         self._controller = None
         self._sdk = None
-        self.limits: List[JointLimit] = []
-        self._commanded: Optional[List[float]] = None
-        self._last_write: Optional[float] = None
+        self.limits: list[JointLimit] = []
+        self._commanded: list[float] | None = None
+        self._last_write: float | None = None
         self.connected = False
 
     # ------------------------------------------------------------------ setup
@@ -98,6 +121,10 @@ class Hand:
         must be clear of obstructions before this is called.
         """
         RS485Controller, _ = sdk.load()
+        # After load(), the vendor example dir is on sys.path, so serial_port
+        # is importable and its class can be patched. Nothing on disk changes.
+        if self.no_serial_flush:
+            sdk.disable_serial_flush()
         self._controller = RS485Controller()
 
         ok = self._controller.connect(
@@ -129,7 +156,7 @@ class Hand:
         self._commanded = self.read_angles()
         self._last_write = time.monotonic()
 
-    def _read_limits(self) -> List[JointLimit]:
+    def _read_limits(self) -> list[JointLimit]:
         """Ask the firmware for each joint's travel; fall back to a safe guess."""
         fn = self._sdk._lib.lhandprolib_get_limit_target_angle
         handle = self._sdk._handle
@@ -145,7 +172,7 @@ class Hand:
 
     # ------------------------------------------------------------------- read
 
-    def read_angles(self) -> List[float]:
+    def read_angles(self) -> list[float]:
         """Current measured joint angles in degrees."""
         out = []
         for motor_id in range(1, NUM_JOINTS + 1):
@@ -155,7 +182,7 @@ class Hand:
                 out.append(0.0)
         return out
 
-    def alarms(self) -> List[int]:
+    def alarms(self) -> list[int]:
         out = []
         for motor_id in range(1, NUM_JOINTS + 1):
             try:
@@ -172,7 +199,7 @@ class Hand:
 
     # ------------------------------------------------------------------ write
 
-    def write_angles(self, angles: Sequence[float]) -> List[float]:
+    def write_angles(self, angles: Sequence[float]) -> list[float]:
         """Clamp, rate-limit and command a full joint vector.
 
         Returns the angles actually commanded, which is what the caller should
@@ -200,26 +227,56 @@ class Hand:
 
         if not self.dry_run:
             sent = self._apply_stall_kick(target, now) if self.stall_kick else target
-            for i, angle in enumerate(sent):
-                self._sdk.set_target_angle(i + 1, angle)
-            self._sdk.move_motors(0)
+            self._send(sent)
 
         return target
 
+    def _send(self, sent: Sequence[float]) -> int:
+        """Push the joint targets over RS485; returns transactions issued.
+
+        Every set_target_angle is a separate serial transaction, and so is
+        move_motors. With skip_unchanged off this is always seven.
+        """
+        resync = self._last_sent is None or (
+            self.resync_frames and self._writes_since_resync >= self.resync_frames
+        )
+
+        if self.skip_unchanged and not resync:
+            changed = [i for i in range(NUM_JOINTS) if abs(sent[i] - self._last_sent[i]) > self.skip_epsilon]
+        else:
+            changed = list(range(NUM_JOINTS))
+
+        for i in changed:
+            self._sdk.set_target_angle(i + 1, sent[i])
+        tx = len(changed)
+        # move_motors starts motion toward the targets. With nothing newly
+        # written there is nothing to start, and any move already under way is
+        # unaffected, so the call is skipped rather than spent.
+        if changed:
+            self._sdk.move_motors(0)
+            tx += 1
+
+        self._last_sent = list(sent)
+        self._writes_since_resync = 0 if resync else self._writes_since_resync + 1
+        self.last_tx_count = tx
+        self.tx_total += tx
+        return tx
+
     # Tunables for the unstick logic.
-    KICK_ERROR_DEG = 3.0      # short of target by more than this ...
-    KICK_STEADY_S = 0.25      # ... for this long, with the joint not moving ...
-    KICK_DEG = 8.0            # ... then overshoot the command by at least this much
-    KICK_DEG_MAX = 12.0       # grows with the error: a worm drive needs more to let go
+    KICK_ERROR_DEG = 3.0  # short of target by more than this ...
+    KICK_STEADY_S = 0.25  # ... for this long, with the joint not moving ...
+    KICK_DEG = 8.0  # ... then overshoot the command by at least this much
+    KICK_DEG_MAX = 12.0  # grows with the error: a worm drive needs more to let go
     KICK_HOLD_S = 0.15
-    KICK_COOLDOWN_S = 0.3     # short, so a joint that stays stuck gets kicked again
+    KICK_COOLDOWN_S = 0.3  # short, so a joint that stays stuck gets kicked again
 
     def _apply_stall_kick(self, target, now):
         measured = self.read_angles()
         sent = list(target)
         for i, (want, have) in enumerate(zip(target, measured)):
-            st = self._kick_state.setdefault(i, {"since": None, "until": 0.0, "cool": 0.0,
-                                                 "last_have": have, "last_want": want})
+            st = self._kick_state.setdefault(
+                i, {"since": None, "until": 0.0, "cool": 0.0, "last_have": have, "last_want": want}
+            )
             err = want - have
             moving = abs(have - st["last_have"]) > 0.5
             st["last_have"], st["last_want"] = have, want
@@ -295,7 +352,7 @@ class Hand:
             self._sdk = None
             self.connected = False
 
-    def __enter__(self) -> "Hand":
+    def __enter__(self) -> Hand:
         return self
 
     def __exit__(self, *exc) -> None:

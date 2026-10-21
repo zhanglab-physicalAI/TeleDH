@@ -64,8 +64,7 @@ def list_cameras():
         info = sysdir / "name"
         if info.exists():
             name = info.read_text().strip()
-        out.append({"node": str(node), "index": int(node.name[5:]),
-                    "name": name, "by_path": stable})
+        out.append({"node": str(node), "index": int(node.name[5:]), "name": name, "by_path": stable})
     return out
 
 
@@ -89,8 +88,7 @@ def resolve_camera(spec):
     if len(matches) == 1:
         return matches[0]["node"]
     if len(matches) > 1:
-        raise RuntimeError(f"{text!r} matches {len(matches)} cameras; use a by-path from "
-                           "`run.py cameras`")
+        raise RuntimeError(f"{text!r} matches {len(matches)} cameras; use a by-path from `run.py cameras`")
     raise RuntimeError(f"no camera matches {text!r}; see `run.py cameras`")
 
 
@@ -107,8 +105,7 @@ class Camera:
       thread that keeps only the most recent frame fixes that instead.
     """
 
-    def __init__(self, index, width: int = 640, height: int = 480, fps: int = 30,
-                 settle: float = 1.5):
+    def __init__(self, index, width: int = 640, height: int = 480, fps: int = 30, settle: float = 1.5):
         import cv2
 
         self._cv2 = cv2
@@ -126,6 +123,12 @@ class Camera:
         self._cap = cap
         self._lock = threading.Lock()
         self._frame = None
+        # Capture time of the newest frame, and of the frame last handed out.
+        # Stamped after read() returns, so this dates the frame from when it
+        # reached us: it measures queueing here, not the camera's own exposure
+        # and transfer delay, which is not observable from inside the process.
+        self._stamp = 0.0
+        self.frame_stamp = 0.0
         self._seq = 0
         self._last_seq = 0
         self._running = True
@@ -147,8 +150,10 @@ class Camera:
             if not ok:
                 time.sleep(0.005)
                 continue
+            stamp = time.monotonic()
             with self._lock:
                 self._frame = frame
+                self._stamp = stamp
                 self._seq += 1
 
     def read(self, timeout: float = 1.0):
@@ -158,6 +163,7 @@ class Camera:
             with self._lock:
                 if self._frame is not None and self._seq != self._last_seq:
                     self._last_seq = self._seq
+                    self.frame_stamp = self._stamp
                     return True, self._frame.copy()
             time.sleep(0.002)
         return False, None

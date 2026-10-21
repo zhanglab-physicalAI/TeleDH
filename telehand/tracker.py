@@ -12,7 +12,6 @@ import math
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Optional
 
 import numpy as np
 
@@ -67,10 +66,10 @@ def _quiet_native_stderr():
 class HandReading:
     """One frame of tracking, as six raw signals in degrees."""
 
-    signals: List[float]
+    signals: list[float]
     handedness: str
-    landmarks_2d: Optional[np.ndarray] = None  # (21, 2) in image coords, for drawing
-    world_pts: Optional[np.ndarray] = None     # (21, 3) metric, hand-relative
+    landmarks_2d: np.ndarray | None = None  # (21, 2) in image coords, for drawing
+    world_pts: np.ndarray | None = None  # (21, 3) metric, hand-relative
 
 
 def _angle_between(v1: np.ndarray, v2: np.ndarray) -> float:
@@ -90,7 +89,7 @@ def _chain_bend(pts: np.ndarray, chain) -> float:
     return _angle_between(pip - mcp, dip - pip) + _angle_between(dip - pip, tip - dip)
 
 
-def extract_signals(world_pts: np.ndarray) -> List[float]:
+def extract_signals(world_pts: np.ndarray) -> list[float]:
     """Reduce 21 world landmarks to the six raw joint signals."""
     thumb_flexion = _chain_bend(world_pts, FINGER_CHAINS["thumb"])
 
@@ -111,8 +110,7 @@ def extract_signals(world_pts: np.ndarray) -> List[float]:
         thumb_abduction = 0.0
     else:
         offset = world_pts[THUMB_TIP] - world_pts[INDEX_MCP]
-        thumb_abduction = float(np.dot(offset, palm_axis / palm_width)
-                                / palm_width) * 100.0
+        thumb_abduction = float(np.dot(offset, palm_axis / palm_width) / palm_width) * 100.0
 
     return [
         thumb_abduction,
@@ -158,7 +156,7 @@ class HandTracker:
             self._landmarker = vision.HandLandmarker.create_from_options(options)
         self._warmed_up = False
 
-    def process(self, bgr_frame: np.ndarray, timestamp_ms: int) -> Optional[HandReading]:
+    def process(self, bgr_frame: np.ndarray, timestamp_ms: int) -> HandReading | None:
         """Track one frame. Returns None when no hand is visible."""
         import cv2
         import mediapipe as mp

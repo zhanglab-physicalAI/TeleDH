@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import importlib
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 # Public names, resolved on first use so that importing the package does not
 # pull in numpy or the vendor SDK before ``telehand.bootstrap`` has run.

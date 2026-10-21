@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import struct
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Sequence, Tuple
 
 import numpy as np
 
@@ -25,10 +25,11 @@ from .paths import URDF_ROOT
 
 # distal = c0 + c1*q + c2*q^2, q = driving joint angle in radians.
 COUPLING = {
-    "thumb":  (0.004592, 0.8808, 0.469825),
+    "thumb": (0.004592, 0.8808, 0.469825),
     "finger": (0.011072, 0.9206, 0.200535),
 }
 FIRMWARE_MAX_DEG = [60.0, 30.0, 80.0, 80.0, 80.0, 80.0]
+
 
 # Firmware angle -> driving joint angle, per joint (degrees in, degrees out).
 #
@@ -48,9 +49,9 @@ def _finger_curve(fw: float) -> float:
 # Fitted to 10 sensor-confirmed thumb contacts and 16 confirmed non-contacts
 # (data/touch_grid.json). Loosely determined: F 50..60 and G 0.6..0.7 fit almost
 # as well, so expect a few degrees of thumb error away from the pinch region.
-THUMB_FLEX_FULL_DEG = 57.5     # joint angle at firmware 30
-THUMB_ABD_GAIN = 0.6           # joint deg per firmware deg
-THUMB_ABD_OFFSET = 5.0         # joint deg at firmware 0
+THUMB_FLEX_FULL_DEG = 57.5  # joint angle at firmware 30
+THUMB_ABD_GAIN = 0.6  # joint deg per firmware deg
+THUMB_ABD_OFFSET = 5.0  # joint deg at firmware 0
 
 # Mechanical envelope, also measured: the further the thumb is swung across the
 # palm, the less it can flex before it binds. Firmware degrees in and out.
@@ -58,7 +59,8 @@ _FLEX_ENVELOPE = [(0.0, 30.0), (30.0, 30.0), (40.0, 27.0), (50.0, 21.0), (60.0, 
 
 
 def thumb_flex_max(abd_fw: float) -> float:
-    xs = [p[0] for p in _FLEX_ENVELOPE]; ys = [p[1] for p in _FLEX_ENVELOPE]
+    xs = [p[0] for p in _FLEX_ENVELOPE]
+    ys = [p[1] for p in _FLEX_ENVELOPE]
     return float(np.interp(abd_fw, xs, ys))
 
 
@@ -73,7 +75,10 @@ def _thumb_abd_curve(fw: float) -> float:
 DRIVE_MAP = {
     0: _thumb_abd_curve,
     1: _thumb_flex_curve,
-    2: _finger_curve, 3: _finger_curve, 4: _finger_curve, 5: _finger_curve,
+    2: _finger_curve,
+    3: _finger_curve,
+    4: _finger_curve,
+    5: _finger_curve,
 }
 
 # Actuated joint -> the URDF chain it drives, tip mesh, and the passive joint.
@@ -91,11 +96,13 @@ def _rpy_to_matrix(roll: float, pitch: float, yaw: float) -> np.ndarray:
     cr, sr = np.cos(roll), np.sin(roll)
     cp, sp = np.cos(pitch), np.sin(pitch)
     cy, sy = np.cos(yaw), np.sin(yaw)
-    return np.array([
-        [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
-        [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
-        [-sp,     cp * sr,                cp * cr],
-    ])
+    return np.array(
+        [
+            [cy * cp, cy * sp * sr - sy * cr, cy * sp * cr + sy * sr],
+            [sy * cp, sy * sp * sr + cy * cr, sy * sp * cr - cy * sr],
+            [-sp, cp * sr, cp * cr],
+        ]
+    )
 
 
 def _axis_rotation(axis: np.ndarray, angle: float) -> np.ndarray:
@@ -107,14 +114,18 @@ def _axis_rotation(axis: np.ndarray, angle: float) -> np.ndarray:
 def _stl_vertices(path: Path) -> np.ndarray:
     raw = path.read_bytes()
     if raw[:5] == b"solid" and b"facet" in raw[:512]:
-        return np.array([[float(v) for v in line.split()[1:4]]
-                         for line in raw.decode("utf8", "ignore").splitlines()
-                         if line.strip().startswith("vertex")])
+        return np.array(
+            [
+                [float(v) for v in line.split()[1:4]]
+                for line in raw.decode("utf8", "ignore").splitlines()
+                if line.strip().startswith("vertex")
+            ]
+        )
     count = struct.unpack("<I", raw[80:84])[0]
     vals = []
     for i in range(count):
         off = 84 + i * 50 + 12
-        vals += list(struct.unpack("<9f", raw[off:off + 36]))
+        vals += list(struct.unpack("<9f", raw[off : off + 36]))
     return np.array(vals).reshape(-1, 3)
 
 
@@ -136,7 +147,7 @@ class HandModel:
         if not urdf.exists():
             raise FileNotFoundError(f"URDF not found: {urdf}")
         self.direction = direction
-        self.joints: Dict[str, Joint] = {}
+        self.joints: dict[str, Joint] = {}
         root = ET.parse(urdf).getroot()
         for j in root.findall("joint"):
             origin = j.find("origin")
@@ -145,8 +156,9 @@ class HandModel:
             self.joints[j.get("name")] = Joint(
                 xyz=np.array([float(v) for v in origin.get("xyz").split()]),
                 rotation=_rpy_to_matrix(*[float(v) for v in origin.get("rpy").split()]),
-                axis=(np.array([float(v) for v in axis_el.get("xyz").split()])
-                      if axis_el is not None else None),
+                axis=(
+                    np.array([float(v) for v in axis_el.get("xyz").split()]) if axis_el is not None else None
+                ),
                 lower=float(limit.get("lower")) if limit is not None else 0.0,
                 upper=float(limit.get("upper")) if limit is not None else 0.0,
             )
@@ -154,7 +166,7 @@ class HandModel:
         # The tip links are fixed at their parent's origin, so the contact point
         # lives in the mesh: take the vertex furthest from that origin.
         suffix = "link"
-        self.tips: Dict[str, np.ndarray] = {}
+        self.tips: dict[str, np.ndarray] = {}
         for finger, (_chain, tip_link) in FINGER_CHAINS.items():
             pts = _stl_vertices(pkg / "meshes" / f"{tip_link}_{suffix}.STL")
             self.tips[finger] = pts[np.argmax(np.linalg.norm(pts, axis=1))]
@@ -170,11 +182,11 @@ class HandModel:
             rot = rot @ j.rotation @ _axis_rotation(j.axis, q)
         return pos + rot @ self.tips[finger]
 
-    def limits(self, finger: str) -> list[Tuple[float, float]]:
+    def limits(self, finger: str) -> list[tuple[float, float]]:
         chain, _ = FINGER_CHAINS[finger]
         return [(self.joints[n].lower, self.joints[n].upper) for n in chain]
 
-    def all_fingertips(self, urdf_angles: Dict[str, Sequence[float]]) -> Dict[str, np.ndarray]:
+    def all_fingertips(self, urdf_angles: dict[str, Sequence[float]]) -> dict[str, np.ndarray]:
         return {f: self.fingertip(f, q) for f, q in urdf_angles.items()}
 
     # ------------------------------------------------------------ firmware
@@ -185,14 +197,16 @@ class HandModel:
         return c0 + c1 * q + c2 * q * q
 
     @classmethod
-    def joints_from_firmware(cls, fw: Sequence[float]) -> Dict[str, list]:
+    def joints_from_firmware(cls, fw: Sequence[float]) -> dict[str, list]:
         """Firmware angles (deg, JOINT_NAMES order) -> per-finger URDF chain radians.
 
         The vendor's model treats each firmware angle as the driving joint's
         angle directly, and derives the passive joint from it.
         """
+
         def drv(i):
             return np.radians(DRIVE_MAP[i](float(fw[i])))
+
         q11, q12 = drv(0), drv(1)
         out = {"thumb": [q11, q12, cls.coupled("thumb", q12)]}
         for i, f in enumerate(FINGER_ORDER):
@@ -200,13 +214,15 @@ class HandModel:
             out[f] = [q1, cls.coupled("finger", q1)]
         return out
 
-    def fingertips_from_firmware(self, fw: Sequence[float]) -> Dict[str, np.ndarray]:
+    def fingertips_from_firmware(self, fw: Sequence[float]) -> dict[str, np.ndarray]:
         return self.all_fingertips(self.joints_from_firmware(fw))
 
     def chain_points(self, finger: str, angles: Sequence[float]) -> list:
         """Joint origins along the chain plus the tip, in base_link (metres)."""
         chain, _ = FINGER_CHAINS[finger]
-        pos = np.zeros(3); rot = np.eye(3); pts = []
+        pos = np.zeros(3)
+        rot = np.eye(3)
+        pts = []
         for name, q in zip(chain, angles):
             j = self.joints[name]
             pos = pos + rot @ j.xyz

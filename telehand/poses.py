@@ -12,7 +12,6 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -38,7 +37,7 @@ POSE_PLAN = [
 # successive finger, and the target finger has to come up to meet it. Measure
 # them with `run.py jog` and save over these; the estimates only exist so the
 # system runs before you have.
-DEFAULT_JOINTS: Dict[str, List[float]] = {
+DEFAULT_JOINTS: dict[str, list[float]] = {
     "open": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
     "pinch_index": [10.0, 15.0, 45.0, 0.0, 0.0, 0.0],
     "pinch_middle": [25.0, 18.0, 0.0, 50.0, 0.0, 0.0],
@@ -52,9 +51,9 @@ MEASURED = {"open", "fist", "pinch_index", "pinch_middle", "pinch_ring", "pinch_
 @dataclass
 class PoseAnchor:
     name: str
-    joints: List[float]
-    signals: Optional[List[float]] = None   # filled in by calibration
-    measured: bool = False                  # joints came from the hardware
+    joints: list[float]
+    signals: list[float] | None = None  # filled in by calibration
+    measured: bool = False  # joints came from the hardware
 
     @property
     def complete(self) -> bool:
@@ -63,22 +62,21 @@ class PoseAnchor:
 
 @dataclass
 class PoseLibrary:
-    anchors: List[PoseAnchor] = field(default_factory=list)
+    anchors: list[PoseAnchor] = field(default_factory=list)
 
     @classmethod
-    def default(cls) -> "PoseLibrary":
-        return cls([
-            PoseAnchor(name, list(DEFAULT_JOINTS[name]), None, name in MEASURED)
-            for name, _ in POSE_PLAN
-        ])
+    def default(cls) -> PoseLibrary:
+        return cls(
+            [PoseAnchor(name, list(DEFAULT_JOINTS[name]), None, name in MEASURED) for name, _ in POSE_PLAN]
+        )
 
-    def get(self, name: str) -> Optional[PoseAnchor]:
+    def get(self, name: str) -> PoseAnchor | None:
         for a in self.anchors:
             if a.name == name:
                 return a
         return None
 
-    def set_joints(self, name: str, joints: List[float], measured: bool = True) -> None:
+    def set_joints(self, name: str, joints: list[float], measured: bool = True) -> None:
         anchor = self.get(name)
         if anchor is None:
             self.anchors.append(PoseAnchor(name, list(joints), None, measured))
@@ -87,43 +85,49 @@ class PoseLibrary:
             anchor.measured = measured
 
     @property
-    def complete_anchors(self) -> List[PoseAnchor]:
+    def complete_anchors(self) -> list[PoseAnchor]:
         return [a for a in self.anchors if a.complete]
 
     def save(self, path: Path = POSES_FILE) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({
-            "version": 2,
-            "anchors": [
-                {"name": a.name, "joints": a.joints,
-                 "signals": a.signals, "measured": a.measured}
-                for a in self.anchors
-            ],
-        }, indent=2) + "\n")
+        path.write_text(
+            json.dumps(
+                {
+                    "version": 2,
+                    "anchors": [
+                        {"name": a.name, "joints": a.joints, "signals": a.signals, "measured": a.measured}
+                        for a in self.anchors
+                    ],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
 
     @classmethod
-    def load(cls, path: Path = POSES_FILE) -> "PoseLibrary":
+    def load(cls, path: Path = POSES_FILE) -> PoseLibrary:
         path = Path(path)
         if not path.exists():
             return cls.default()
         data = json.loads(path.read_text())
-        lib = cls([
-            PoseAnchor(
-                a["name"],
-                [float(v) for v in a["joints"]],
-                [float(v) for v in a["signals"]] if a.get("signals") else None,
-                bool(a.get("measured", False)),
-            )
-            for a in data.get("anchors", [])
-        ])
+        lib = cls(
+            [
+                PoseAnchor(
+                    a["name"],
+                    [float(v) for v in a["joints"]],
+                    [float(v) for v in a["signals"]] if a.get("signals") else None,
+                    bool(a.get("measured", False)),
+                )
+                for a in data.get("anchors", [])
+            ]
+        )
         # Poses added to the plan after the file was written show up as
         # unmeasured, uncalibrated anchors so jog and calibrate can fill them in.
         known = {a.name for a in lib.anchors}
         for name, _ in POSE_PLAN:
             if name not in known:
-                lib.anchors.append(PoseAnchor(name, list(DEFAULT_JOINTS[name]), None,
-                                              name in MEASURED))
+                lib.anchors.append(PoseAnchor(name, list(DEFAULT_JOINTS[name]), None, name in MEASURED))
         return lib
 
 
@@ -135,8 +139,15 @@ class PoseRetargeter:
     trouble to record is a pose the robot will actually reach.
     """
 
-    def __init__(self, limits, library: PoseLibrary, *, smoothing: float = 0.35,
-                 deadband_deg: float = 0.8, power: float = 2.5) -> None:
+    def __init__(
+        self,
+        limits,
+        library: PoseLibrary,
+        *,
+        smoothing: float = 0.35,
+        deadband_deg: float = 0.8,
+        power: float = 2.5,
+    ) -> None:
         self.limits = limits
         self.library = library
         self.smoothing = smoothing
@@ -157,8 +168,8 @@ class PoseRetargeter:
         self._span = np.where(span < 1e-6, 1.0, span)
         self._norm = (self._sig - self._lo) / self._span
 
-        self._filtered: Optional[np.ndarray] = None
-        self._held: Optional[np.ndarray] = None
+        self._filtered: np.ndarray | None = None
+        self._held: np.ndarray | None = None
 
     def weights(self, signals) -> np.ndarray:
         point = (np.asarray(signals, dtype=np.float64) - self._lo) / self._span
@@ -170,7 +181,7 @@ class PoseRetargeter:
         w = 1.0 / np.power(dist, self.power)
         return w / w.sum()
 
-    def __call__(self, signals) -> List[float]:
+    def __call__(self, signals) -> list[float]:
         angles = self.weights(signals) @ self._joints
 
         if self._filtered is None:

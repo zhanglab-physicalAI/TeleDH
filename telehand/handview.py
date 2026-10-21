@@ -22,12 +22,11 @@ back the slots the fingers sit in. Cost is about 3 ms a frame.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
 
 import numpy as np
 
-from .kinematics import (URDF_ROOT, FINGER_CHAINS, HandModel, _axis_rotation,
-                         _stl_vertices)
+from .kinematics import FINGER_CHAINS, URDF_ROOT, HandModel, _axis_rotation, _stl_vertices
 from .paths import CACHE_DIR
 
 # Default viewpoint: three-quarters from the palm side. Of the six tried it is
@@ -36,7 +35,7 @@ from .paths import CACHE_DIR
 DEFAULT_YAW = -115.0
 DEFAULT_PITCH = -35.0
 
-MEASURED_MIN_DEG = 2.0    # below this the hand has arrived; drawing it is noise
+MEASURED_MIN_DEG = 2.0  # below this the hand has arrived; drawing it is noise
 PALM_SLABS = 5
 SAMPLES_PER_LINK = 1500
 
@@ -45,20 +44,20 @@ PALM_BASE = (38, 40, 44)
 LINK_BASE = (70, 72, 76)
 EDGE = (24, 24, 26)
 TIP_DOT = (235, 235, 235)
-MEASURED = (90, 200, 250)   # outline of the pose the hand actually reached
+MEASURED = (90, 200, 250)  # outline of the pose the hand actually reached
 
 
-def _link_chains() -> Dict[str, List[str]]:
+def _link_chains() -> dict[str, list[str]]:
     """Every link, with the joint chain that positions it."""
-    chains: Dict[str, List[str]] = {"base_link": []}
+    chains: dict[str, list[str]] = {"base_link": []}
     for _finger, (chain, tip) in FINGER_CHAINS.items():
         for i, joint in enumerate(chain):
             chains[f"{joint}_link"] = list(chain[: i + 1])
-        chains[f"{tip}_link"] = list(chain)      # the tip link rides the last joint
+        chains[f"{tip}_link"] = list(chain)  # the tip link rides the last joint
     return chains
 
 
-def _slabs(points: np.ndarray, n: int) -> List[np.ndarray]:
+def _slabs(points: np.ndarray, n: int) -> list[np.ndarray]:
     centre = points.mean(axis=0)
     _, _, vt = np.linalg.svd(points - centre, full_matrices=False)
     t = (points - centre) @ vt[0]
@@ -85,8 +84,7 @@ def lagging(commanded, measured, threshold: float = MEASURED_MIN_DEG) -> bool:
 def view_matrix(yaw_deg: float, pitch_deg: float) -> np.ndarray:
     cy, sy = np.cos(np.radians(yaw_deg)), np.sin(np.radians(yaw_deg))
     cp, sp = np.cos(np.radians(pitch_deg)), np.sin(np.radians(pitch_deg))
-    return (np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]])
-            @ np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]]))
+    return np.array([[1, 0, 0], [0, cp, -sp], [0, sp, cp]]) @ np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]])
 
 
 class HullHandRenderer:
@@ -97,11 +95,11 @@ class HullHandRenderer:
         self.points = self._load_points(samples)
         # A fixed framing so the hand does not jump about as it moves: bound the
         # union of the open and fist poses once, and reuse it for every frame.
-        self._frame: Optional[Tuple[np.ndarray, float, Tuple[int, int]]] = None
+        self._frame: tuple[np.ndarray, float, tuple[int, int]] | None = None
 
     # ------------------------------------------------------------- geometry
 
-    def _load_points(self, samples: int) -> Dict[str, np.ndarray]:
+    def _load_points(self, samples: int) -> dict[str, np.ndarray]:
         pkg = URDF_ROOT / f"DH116-{self.direction}000-A1"
         cache = CACHE_DIR / f"{self.direction}_{samples}.npz"
         if cache.exists():
@@ -121,7 +119,7 @@ class HullHandRenderer:
             pass
         return out
 
-    def _joint_angles(self, firmware: Sequence[float]) -> Dict[str, float]:
+    def _joint_angles(self, firmware: Sequence[float]) -> dict[str, float]:
         per_finger = HandModel.joints_from_firmware(firmware)
         angles = {}
         for finger, (chain, _tip) in FINGER_CHAINS.items():
@@ -129,7 +127,7 @@ class HullHandRenderer:
                 angles[name] = a
         return angles
 
-    def _link_pose(self, chain: Sequence[str], angles: Dict[str, float]):
+    def _link_pose(self, chain: Sequence[str], angles: dict[str, float]):
         pos = np.zeros(3)
         rot = np.eye(3)
         for joint in chain:
@@ -141,7 +139,7 @@ class HullHandRenderer:
     def world_parts(self, firmware: Sequence[float], view: np.ndarray):
         """Per-part point clouds in view space, plus the five fingertips."""
         angles = self._joint_angles(firmware)
-        parts: List[Tuple[np.ndarray, bool]] = []
+        parts: list[tuple[np.ndarray, bool]] = []
         for link, chain in self.chains.items():
             pos, rot = self._link_pose(chain, angles)
             pts = (self.points[link] @ rot.T + pos) @ view.T
@@ -155,7 +153,7 @@ class HullHandRenderer:
 
     # -------------------------------------------------------------- drawing
 
-    def _framing(self, view: np.ndarray, size: Tuple[int, int]):
+    def _framing(self, view: np.ndarray, size: tuple[int, int]):
         """Centre and scale that hold both the open hand and a fist."""
         if self._frame is not None and self._frame[2] == size:
             return self._frame[0], self._frame[1]
@@ -166,21 +164,28 @@ class HullHandRenderer:
         allp = np.vstack(pts)
         lo, hi = allp.min(axis=0), allp.max(axis=0)
         centre = (lo + hi) / 2
-        scale = 0.90 * min(size[0] / (hi[0] - lo[0] + 1e-6),
-                           size[1] / (hi[1] - lo[1] + 1e-6))
+        scale = 0.90 * min(size[0] / (hi[0] - lo[0] + 1e-6), size[1] / (hi[1] - lo[1] + 1e-6))
         self._frame = (centre, scale, size)
         return centre, scale
 
-    def render(self, firmware: Sequence[float], size: Tuple[int, int] = (400, 300),
-               yaw: float = DEFAULT_YAW, pitch: float = DEFAULT_PITCH,
-               measured: Optional[Sequence[float]] = None,
-               background=BG) -> np.ndarray:
+    def render(
+        self,
+        firmware: Sequence[float],
+        size: tuple[int, int] = (400, 300),
+        yaw: float = DEFAULT_YAW,
+        pitch: float = DEFAULT_PITCH,
+        measured: Sequence[float] | None = None,
+        background=BG,
+    ) -> np.ndarray:
         import cv2
 
         view = view_matrix(yaw, pitch)
         # Framing depends on the viewpoint, so drop it when the view moves.
-        if self._frame is not None and getattr(self, "_frame_view", None) is not None \
-                and not np.allclose(self._frame_view, view):
+        if (
+            self._frame is not None
+            and getattr(self, "_frame_view", None) is not None
+            and not np.allclose(self._frame_view, view)
+        ):
             self._frame = None
         self._frame_view = view
 
@@ -188,8 +193,9 @@ class HullHandRenderer:
         img = np.full((size[1], size[0], 3), background, np.uint8)
 
         def project(p: np.ndarray) -> np.ndarray:
-            return np.c_[(p[:, 0] - centre[0]) * scale + size[0] / 2,
-                         -(p[:, 1] - centre[1]) * scale + size[1] / 2].astype(np.float32)
+            return np.c_[
+                (p[:, 0] - centre[0]) * scale + size[0] / 2, -(p[:, 1] - centre[1]) * scale + size[1] / 2
+            ].astype(np.float32)
 
         parts, tips = self.world_parts(firmware, view)
         parts.sort(key=lambda t: t[0][:, 2].mean())
@@ -217,7 +223,7 @@ class HullHandRenderer:
                 xy = project(tip.reshape(1, 3))[0]
                 cv2.circle(img, (int(xy[0]), int(xy[1])), 4, MEASURED, 1, cv2.LINE_AA)
 
-        for name, tip in tips.items():
+        for _name, tip in tips.items():
             xy = project(tip.reshape(1, 3))[0]
             cv2.circle(img, (int(xy[0]), int(xy[1])), 3, TIP_DOT, -1, cv2.LINE_AA)
         return img
@@ -227,19 +233,23 @@ class HullHandRenderer:
 MJ_AZIMUTH = -115.0
 MJ_ELEVATION = -20.0
 MJ_DISTANCE = 0.22
-OVERSCAN = 1.6        # render this much larger, then crop to centre the hand
-TARGET_FILL = 0.88    # fraction of the frame the hand should span
+OVERSCAN = 1.6  # render this much larger, then crop to centre the hand
+TARGET_FILL = 0.88  # fraction of the frame the hand should span
 MEASURED_EDGE = (90, 200, 250)
 
 # Geom holding each fingertip, in the MJCF. Its mesh is searched once for the
 # vertex furthest from the geom origin, which is the pad that touches things.
-TIP_GEOM = {"thumb": "finger14_link", "index": "finger23_link",
-            "middle": "finger33_link", "ring": "finger43_link",
-            "pinky": "finger53_link"}
+TIP_GEOM = {
+    "thumb": "finger14_link",
+    "index": "finger23_link",
+    "middle": "finger33_link",
+    "ring": "finger43_link",
+    "pinky": "finger53_link",
+}
 
 # Which finger a MJCF geom belongs to, for naming contacts.
 GEOM_FINGER = {"1": "thumb", "2": "index", "3": "middle", "4": "ring", "5": "pinky"}
-CONTACT_MIN_MM = 0.5     # ignore grazes; only report real interpenetration
+CONTACT_MIN_MM = 0.5  # ignore grazes; only report real interpenetration
 CONTACT_NEAR = (90, 210, 255)
 CONTACT_DEEP = (60, 80, 255)
 
@@ -249,6 +259,7 @@ class MujocoHandRenderer:
 
     def __init__(self, direction: str = "R") -> None:
         import os
+
         os.environ.setdefault("MUJOCO_GL", "glfw")
         import mujoco
 
@@ -268,13 +279,15 @@ class MujocoHandRenderer:
         self.model.geom_conaffinity[:] = 1
         self.data = mujoco.MjData(self.model)
         self.direction = direction
-        self._qadr = {mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_JOINT, i):
-                      self.model.jnt_qposadr[i] for i in range(self.model.njnt)}
+        self._qadr = {
+            mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_JOINT, i): self.model.jnt_qposadr[i]
+            for i in range(self.model.njnt)
+        }
         self._option = mujoco.MjvOption()
         mujoco.mjv_defaultOption(self._option)
         self._camera = mujoco.MjvCamera()
-        self._renderers: Dict[Tuple[int, int], object] = {}
-        self._framing: Dict[Tuple, Tuple[np.ndarray, float]] = {}
+        self._renderers: dict[tuple[int, int], object] = {}
+        self._framing: dict[tuple, tuple[np.ndarray, float]] = {}
 
         # Fingertip in each tip geom's own frame. The MJCF body layout does not
         # match the URDF's, so tip positions from `kinematics` cannot be reused
@@ -286,7 +299,7 @@ class MujocoHandRenderer:
                 continue
             mid = self.model.geom_dataid[gid]
             adr, n = self.model.mesh_vertadr[mid], self.model.mesh_vertnum[mid]
-            verts = self.model.mesh_vert[adr:adr + n]
+            verts = self.model.mesh_vert[adr : adr + n]
             # MuJoCo recentres mesh vertices on the centroid, so the vertex
             # furthest from the origin here is whichever end of the pad is
             # further from its middle -- often the root, not the tip. Measure
@@ -315,7 +328,7 @@ class MujocoHandRenderer:
                     self.data.qpos[adr] = angle
         self._mj.mj_forward(self.model, self.data)
 
-    def _renderer_for(self, size: Tuple[int, int]):
+    def _renderer_for(self, size: tuple[int, int]):
         r = self._renderers.get(size)
         if r is None:
             r = self._mj.Renderer(self.model, height=size[1], width=size[0])
@@ -324,6 +337,7 @@ class MujocoHandRenderer:
 
     def _raw(self, firmware, size, yaw, pitch, lookat, distance):
         import cv2
+
         self._apply(firmware)
         self._camera.lookat[:] = lookat
         self._camera.azimuth = yaw
@@ -344,6 +358,7 @@ class MujocoHandRenderer:
         once per viewpoint and cached.
         """
         import cv2
+
         key = (size, round(yaw, 1), round(pitch, 1))
         cached = self._framing.get(key)
         if cached is not None:
@@ -382,7 +397,7 @@ class MujocoHandRenderer:
     def _shot(self, firmware, size, yaw, pitch, zoom=1.0):
         distance, (x0, y0), big = self._frame_for(size, yaw, pitch)
         img = self._raw(firmware, big, yaw, pitch, self._lookat, distance / max(zoom, 1e-3))
-        return img[y0:y0 + size[1], x0:x0 + size[0]]
+        return img[y0 : y0 + size[1], x0 : x0 + size[0]]
 
     def _projector(self, firmware, size, yaw, pitch, zoom):
         """Render once, then return a world -> cropped-pixel function."""
@@ -408,11 +423,17 @@ class MujocoHandRenderer:
             if -20 <= px <= size[0] + 20 and -20 <= py <= size[1] + 20:
                 return float(px), float(py)
             return None
+
         return project
 
-    def fingertip_pixels(self, firmware: Sequence[float], size: Tuple[int, int],
-                         yaw: float = MJ_AZIMUTH, pitch: float = MJ_ELEVATION,
-                         zoom: float = 1.0):
+    def fingertip_pixels(
+        self,
+        firmware: Sequence[float],
+        size: tuple[int, int],
+        yaw: float = MJ_AZIMUTH,
+        pitch: float = MJ_ELEVATION,
+        zoom: float = 1.0,
+    ):
         """Where each fingertip lands in the cropped image, or None if behind."""
         project = self._projector(firmware, size, yaw, pitch, zoom)
         out = {}
@@ -429,9 +450,14 @@ class MujocoHandRenderer:
             return GEOM_FINGER.get(name[6], name)
         return "palm" if name.startswith("base") else name
 
-    def contacts(self, firmware: Sequence[float], size: Tuple[int, int],
-                 yaw: float = MJ_AZIMUTH, pitch: float = MJ_ELEVATION,
-                 zoom: float = 1.0):
+    def contacts(
+        self,
+        firmware: Sequence[float],
+        size: tuple[int, int],
+        yaw: float = MJ_AZIMUTH,
+        pitch: float = MJ_ELEVATION,
+        zoom: float = 1.0,
+    ):
         """Self-contacts as (pixel, depth_mm, 'thumb-index') tuples.
 
         The meshes are rigid while the real fingertips are rubber, so a genuine
@@ -462,10 +488,16 @@ class MujocoHandRenderer:
             uniq.append((xy, depth, label))
         return uniq
 
-    def render(self, firmware: Sequence[float], size: Tuple[int, int] = (400, 278),
-               yaw: float = MJ_AZIMUTH, pitch: float = MJ_ELEVATION,
-               measured: Optional[Sequence[float]] = None,
-               background=BG, zoom: float = 1.0) -> np.ndarray:
+    def render(
+        self,
+        firmware: Sequence[float],
+        size: tuple[int, int] = (400, 278),
+        yaw: float = MJ_AZIMUTH,
+        pitch: float = MJ_ELEVATION,
+        measured: Sequence[float] | None = None,
+        background=BG,
+        zoom: float = 1.0,
+    ) -> np.ndarray:
         import cv2
 
         img = self._shot(firmware, size, yaw, pitch, zoom)

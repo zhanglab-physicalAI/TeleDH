@@ -18,9 +18,15 @@ def run(args) -> int:
     Camera-free: this is the tool for answering questions like "which direction
     does thumb abduction actually move?" without a tracker in the loop.
     """
-    hand = Hand(args.port, args.baud, dry_run=args.dry_run,
-                keep_enabled=args.keep_enabled, stall_kick=args.stall_kick,
-                max_deg_per_s=args.max_speed, max_current=args.max_current)
+    hand = Hand(
+        args.port,
+        args.baud,
+        dry_run=args.dry_run,
+        keep_enabled=args.keep_enabled,
+        stall_kick=args.stall_kick,
+        max_deg_per_s=args.max_speed,
+        max_current=args.max_current,
+    )
     print(f"Connecting to hand on {args.port} ...")
     if args.home and not args.dry_run:
         print("Homing: the hand will move through its full range. Keep it clear.")
@@ -28,7 +34,7 @@ def run(args) -> int:
     print("Connected.\n")
 
     library = PoseLibrary.load(Path(args.poses))
-    view = viz.ViewControl(camera_width=300)   # jog composes a 300 px side panel
+    view = viz.ViewControl(camera_width=300)  # jog composes a 300 px side panel
     jog_mouse_attached = False
     angles = [lim.min_angle for lim in hand.limits]
     hand.write_angles(angles)
@@ -48,7 +54,7 @@ def run(args) -> int:
         print(f"{len(todo)} pose(s) still estimated: " + ", ".join(plan_names[i] for i in todo))
         print(f"Starting on {plan_names[plan_at]}. Adjust, press s, then n for the next.\n")
     angles = list(library.anchors[plan_at].joints)
-    hand.write_angles(angles)   # go there now rather than on the first keypress
+    hand.write_angles(angles)  # go there now rather than on the first keypress
 
     print("Keys (click the window first):")
     print("  1-6      select joint")
@@ -61,39 +67,100 @@ def run(args) -> int:
     print("  s        save this pose under the name shown in the window")
     print("  q        quit\n")
 
-    keys_help = ["1-6 select  ,/. jog", "[/] step   n/N pose",
-                 "o open  f close", "p print   s save", "",
-                 "hjkl rotate view", "v  save view", "", "q quit"]
+    keys_help = [
+        "1-6 select  ,/. jog",
+        "[/] step   n/N pose",
+        "o open  f close",
+        "p print   s save",
+        "",
+        "hjkl rotate view",
+        "v  save view",
+        "",
+        "q quit",
+    ]
     try:
         while True:
             shown = hand.read_angles() if not args.dry_run else angles
             panel = viz.render_panel(
-                480, angles, hand.limits, engaged=True, fps=0.0,
+                480,
+                angles,
+                hand.limits,
+                engaged=True,
+                fps=0.0,
                 alarms=hand.alarms() if not args.dry_run else [0] * NUM_JOINTS,
-                tracked=True, dry_run=args.dry_run, selected=selected,
-                title=f"JOG  {plan_names[plan_at]}", keys=keys_help, **view.kwargs)
+                tracked=True,
+                dry_run=args.dry_run,
+                selected=selected,
+                title=f"JOG  {plan_names[plan_at]}",
+                keys=keys_help,
+                **view.kwargs,
+            )
             side = np.full((480, 300, 3), (26, 24, 22), np.uint8)
-            cv2.putText(side, f"EDITING   {plan_names[plan_at]}", (12, 26),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (60, 170, 235), 1, cv2.LINE_AA)
-            cv2.putText(side, f"joint {selected+1} {JOINT_NAMES[selected]}  step {step:g}",
-                        (12, 46), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (140, 138, 136), 1,
-                        cv2.LINE_AA)
-            cv2.putText(side, "s = save under this name", (12, 66),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (90, 200, 90) if plan_names[plan_at] in saved else (140, 138, 136),
-                        1, cv2.LINE_AA)
-            cv2.putText(side, "MEASURED", (12, 96), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.45, (140, 138, 136), 1, cv2.LINE_AA)
+            cv2.putText(
+                side,
+                f"EDITING   {plan_names[plan_at]}",
+                (12, 26),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (60, 170, 235),
+                1,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                side,
+                f"joint {selected + 1} {JOINT_NAMES[selected]}  step {step:g}",
+                (12, 46),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (140, 138, 136),
+                1,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                side,
+                "s = save under this name",
+                (12, 66),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (90, 200, 90) if plan_names[plan_at] in saved else (140, 138, 136),
+                1,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                side, "MEASURED", (12, 96), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 138, 136), 1, cv2.LINE_AA
+            )
             for i, name in enumerate(JOINT_NAMES):
-                cv2.putText(side, f"{name:<16}{shown[i]:6.1f}", (12, 124 + i * 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.42, (235, 235, 235), 1,
-                            cv2.LINE_AA)
-            cv2.putText(side, "SAVED THIS SESSION", (12, 268),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, (140, 138, 136), 1, cv2.LINE_AA)
+                cv2.putText(
+                    side,
+                    f"{name:<16}{shown[i]:6.1f}",
+                    (12, 124 + i * 20),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.42,
+                    (235, 235, 235),
+                    1,
+                    cv2.LINE_AA,
+                )
+            cv2.putText(
+                side,
+                "SAVED THIS SESSION",
+                (12, 268),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.45,
+                (140, 138, 136),
+                1,
+                cv2.LINE_AA,
+            )
             for i, (nm, vals) in enumerate(saved.items()):
-                cv2.putText(side, f"{nm}: {[round(v) for v in vals]}",
-                            (12, 292 + i * 18), cv2.FONT_HERSHEY_SIMPLEX, 0.36,
-                            (90, 200, 90), 1, cv2.LINE_AA)
+                cv2.putText(
+                    side,
+                    f"{nm}: {[round(v) for v in vals]}",
+                    (12, 292 + i * 18),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.36,
+                    (90, 200, 90),
+                    1,
+                    cv2.LINE_AA,
+                )
             cv2.imshow("telehand jog", viz.compose(side, panel))
             if not jog_mouse_attached:
                 view.camera_width = side.shape[1]
@@ -120,9 +187,9 @@ def run(args) -> int:
             elif key == ord("]"):
                 step = min(20.0, step * 2)
             elif key == ord("o"):
-                angles = [l.min_angle for l in hand.limits]
+                angles = [lim.min_angle for lim in hand.limits]
             elif key == ord("f"):
-                angles = [l.max_angle for l in hand.limits]
+                angles = [lim.max_angle for lim in hand.limits]
             elif key == ord("p"):
                 print(f"pose: {[round(a, 1) for a in angles]}")
             elif key in (ord("h"), ord("l"), ord("j"), ord("k"), ord("v")) and view.handle_key(key):

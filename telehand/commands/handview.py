@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
 
 import cv2
 
@@ -14,7 +13,7 @@ from ..poses import PoseLibrary
 def run(args) -> int:
     """Show the hand rendered from its URDF at a pose. No camera, no motors."""
     renderer = HandRenderer(args.direction)
-    poses: List[Tuple[str, List[float]]] = []
+    poses: list[tuple[str, list[float]]] = []
     if args.poses:
         lib = PoseLibrary.load(Path(args.poses))
         poses = [(a.name, list(a.joints)) for a in lib.anchors]
@@ -28,10 +27,26 @@ def run(args) -> int:
     while True:
         name, fw = poses[i % len(poses)]
         img = renderer.render(fw, size=(args.width, args.height), yaw=yaw, pitch=pitch)
-        cv2.putText(img, f"{name}  {[round(v) for v in fw]}", (8, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (210, 210, 210), 1, cv2.LINE_AA)
-        cv2.putText(img, f"yaw {yaw:.0f}  pitch {pitch:.0f}", (8, args.height - 10),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.42, (140, 138, 136), 1, cv2.LINE_AA)
+        cv2.putText(
+            img,
+            f"{name}  {[round(v) for v in fw]}",
+            (8, 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (210, 210, 210),
+            1,
+            cv2.LINE_AA,
+        )
+        cv2.putText(
+            img,
+            f"yaw {yaw:.0f}  pitch {pitch:.0f}",
+            (8, args.height - 10),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.42,
+            (140, 138, 136),
+            1,
+            cv2.LINE_AA,
+        )
         if args.out:
             cv2.imwrite(args.out, img)
             print(f"wrote {args.out}")

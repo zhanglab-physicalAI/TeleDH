@@ -12,16 +12,16 @@ the pose library so both can be compared on the same hand.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence
 
 import numpy as np
 
 from .paths import DIRECT_CALIBRATION_FILE
 
 # Landmark triplets (a, b, c): bend measured at b. Same table as the vendor's.
-FINGER_JOINTS: Dict[str, List[tuple]] = {
+FINGER_JOINTS: dict[str, list[tuple]] = {
     "thumb": [(0, 1, 2), (1, 2, 3), (2, 3, 4)],
     "index": [(0, 5, 6), (5, 6, 7), (6, 7, 8)],
     "middle": [(0, 9, 10), (9, 10, 11), (10, 11, 12)],
@@ -29,15 +29,20 @@ FINGER_JOINTS: Dict[str, List[tuple]] = {
     "pinky": [(0, 17, 18), (17, 18, 19), (18, 19, 20)],
 }
 
-SIGNAL_NAMES = ["thumb_abduction", "thumb_flexion", "index_flexion",
-                "middle_flexion", "ring_flexion", "pinky_flexion"]
+SIGNAL_NAMES = [
+    "thumb_abduction",
+    "thumb_flexion",
+    "index_flexion",
+    "middle_flexion",
+    "ring_flexion",
+    "pinky_flexion",
+]
 
 # Raw bend degrees for a typical hand until calibrated: (open, closed).
 # The thumb CMC bend reads ~40 deg on a spread, relaxed hand, so its range
 # starts there; anything lower parks the thumb half-swung with the hand open.
 # These are placeholders -- press 1 / 2 in teleop to capture your own.
-DEFAULT_RANGES = [(40.0, 75.0), (5.0, 60.0), (5.0, 90.0),
-                  (5.0, 90.0), (5.0, 90.0), (5.0, 90.0)]
+DEFAULT_RANGES = [(40.0, 75.0), (5.0, 60.0), (5.0, 90.0), (5.0, 90.0), (5.0, 90.0), (5.0, 90.0)]
 
 
 def bend_2d(a, b, c) -> float:
@@ -48,13 +53,12 @@ def bend_2d(a, b, c) -> float:
     return 180.0 - ang
 
 
-def finger_bends(pts: np.ndarray) -> Dict[str, List[float]]:
+def finger_bends(pts: np.ndarray) -> dict[str, list[float]]:
     """All 15 bends from 21 (x, y) points, three per finger, proximal first."""
-    return {f: [bend_2d(pts[i], pts[j], pts[k]) for i, j, k in tri]
-            for f, tri in FINGER_JOINTS.items()}
+    return {f: [bend_2d(pts[i], pts[j], pts[k]) for i, j, k in tri] for f, tri in FINGER_JOINTS.items()}
 
 
-def bends_to_signals(bends: Dict[str, List[float]]) -> List[float]:
+def bends_to_signals(bends: dict[str, list[float]]) -> list[float]:
     """Six scalars in JOINT_NAMES order.
 
     The thumb's CMC bend tracks how far it is swung across the palm; its MCP
@@ -77,13 +81,18 @@ class LandmarkSmoother:
     bytecode; 1.0 is a conventional choice and is exposed for tuning.
     """
 
-    def __init__(self, alpha: float = 0.3, deadband: float = 0.02,
-                 process_noise: float = 0.1, measurement_noise: float = 1.0,
-                 use_kalman: bool = True) -> None:
+    def __init__(
+        self,
+        alpha: float = 0.3,
+        deadband: float = 0.02,
+        process_noise: float = 0.1,
+        measurement_noise: float = 1.0,
+        use_kalman: bool = True,
+    ) -> None:
         self.alpha = alpha
         self.deadband = deadband
         self.use_kalman = use_kalman
-        self._prev: Optional[np.ndarray] = None
+        self._prev: np.ndarray | None = None
         # State per landmark per axis: [position, velocity].
         self._x = np.zeros((21, 2, 2))
         self._P = np.tile(np.eye(2), (21, 2, 1, 1))
@@ -131,17 +140,16 @@ class LandmarkSmoother:
 
 @dataclass
 class DirectCalibration:
-    ranges: List[List[float]] = field(default_factory=lambda: [list(r) for r in DEFAULT_RANGES])
+    ranges: list[list[float]] = field(default_factory=lambda: [list(r) for r in DEFAULT_RANGES])
     calibrated: bool = False
 
     def save(self, path: Path = DIRECT_CALIBRATION_FILE) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps({"ranges": self.ranges, "calibrated": self.calibrated},
-                                         indent=2) + "\n")
+        path.write_text(json.dumps({"ranges": self.ranges, "calibrated": self.calibrated}, indent=2) + "\n")
 
     @classmethod
-    def load(cls, path: Path = DIRECT_CALIBRATION_FILE) -> "DirectCalibration":
+    def load(cls, path: Path = DIRECT_CALIBRATION_FILE) -> DirectCalibration:
         p = Path(path)
         if not p.exists():
             return cls()
@@ -152,11 +160,11 @@ class DirectCalibration:
 class DirectRetargeter:
     """Bend signals -> joint angles by per-joint linear interpolation."""
 
-    def __init__(self, limits, calibration: Optional[DirectCalibration] = None) -> None:
+    def __init__(self, limits, calibration: DirectCalibration | None = None) -> None:
         self.limits = limits
         self.calibration = calibration or DirectCalibration()
 
-    def __call__(self, signals: Sequence[float]) -> List[float]:
+    def __call__(self, signals: Sequence[float]) -> list[float]:
         out = []
         for i, s in enumerate(signals):
             lo, hi = self.calibration.ranges[i]
@@ -176,10 +184,10 @@ class RangeCapture:
 
     def __init__(self, frames: int = 20) -> None:
         self.frames = frames
-        self._which: Optional[int] = None
-        self._buf: List[List[float]] = []
+        self._which: int | None = None
+        self._buf: list[list[float]] = []
 
-    def start(self, which: int) -> None:      # 0 = open end, 1 = closed end
+    def start(self, which: int) -> None:  # 0 = open end, 1 = closed end
         self._which = which
         self._buf = []
 
@@ -187,7 +195,7 @@ class RangeCapture:
     def active(self) -> bool:
         return self._which is not None
 
-    def feed(self, signals: Sequence[float], calib: DirectCalibration) -> Optional[str]:
+    def feed(self, signals: Sequence[float], calib: DirectCalibration) -> str | None:
         if self._which is None:
             return None
         self._buf.append(list(signals))

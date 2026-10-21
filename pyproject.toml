@@ -1,11 +1,12 @@
 [project]
 name = "telehand"
-version = "0.1.0"
+version = "0.2.0"
 description = "Camera-driven teleoperation for the LHandPro DH116 dexterous hand"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "numpy",
+    "scipy",
     "opencv-python",
     "mediapipe>=1.0",
     "pyserial",
@@ -14,7 +15,7 @@ dependencies = [
 [project.optional-dependencies]
 # MuJoCo-rendered hand view; the convex-hull fallback needs nothing extra.
 render = ["mujoco>=3.0", "glfw", "PyOpenGL"]
-dev = ["ruff", "pyflakes"]
+dev = ["ruff", "pyflakes", "pytest"]
 
 [project.scripts]
 telehand = "telehand.cli:main"
@@ -24,7 +25,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["telehand", "telehand.commands"]
+packages = ["telehand", "telehand.commands", "telehand.experimental"]
 
 [tool.ruff]
 line-length = 110
@@ -33,3 +34,22 @@ extend-exclude = ["vendor", "third_party", "somehand", "AnyDexRetarget"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP"]
+# zip() over joint vectors of a fixed length is the norm here; strict= on every
+# call would be noise rather than a guard.
+ignore = ["B905"]
+
+[tool.ruff.lint.isort]
+# tests/support.py puts vendor/ on sys.path, so the test modules must import it
+# before the third-party packages that live there.
+sections = { bootstrap = ["support"] }
+section-order = ["future", "standard-library", "bootstrap", "third-party", "first-party", "local-folder"]
+
+[tool.ruff.lint.per-file-ignores]
+# Entry points and standalone scripts must put vendor/ on sys.path before the
+# imports that need it.
+"run.py" = ["E402"]
+"scripts/*.py" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

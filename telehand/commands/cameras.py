@@ -15,8 +15,7 @@ def run(args) -> int:
         return 1
     if args.use is not None:
         node = resolve_camera(args.use)
-        chosen = next((c for c in cams if c["node"] == str(node)
-                       or c["index"] == node), None)
+        chosen = next((c for c in cams if c["node"] == str(node) or c["index"] == node), None)
         # Prefer the by-path link: device numbers move, USB ports do not.
         spec = (chosen or {}).get("by_path") or str(node)
         save_camera(spec)
@@ -48,7 +47,9 @@ def run(args) -> int:
         print(f"{c['index']:>5}  {c['node']:<13}{c['name']:<34}{fps:5.1f} fps  brightness {brightness:5.1f}")
         if c["by_path"]:
             print(f"       stable: {c['by_path']}")
-    print("\nDevice numbers move when cameras are replugged. Pass a stable path or a "
-          "name fragment:\n  python3 run.py teleop --camera /dev/v4l/by-path/...-index0"
-          "\n  python3 run.py teleop --camera icspring")
+    print(
+        "\nDevice numbers move when cameras are replugged. Pass a stable path or a "
+        "name fragment:\n  python3 run.py teleop --camera /dev/v4l/by-path/...-index0"
+        "\n  python3 run.py teleop --camera icspring"
+    )
     return 0

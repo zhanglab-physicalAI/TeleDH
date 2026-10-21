@@ -10,9 +10,9 @@ on its own and the pinch closer knows what "touching" looks like for this hand.
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Optional, Sequence
 
 import numpy as np
 
@@ -25,9 +25,9 @@ THUMB_CMC = 1
 
 @dataclass
 class HandProfile:
-    palm_width: float                                  # metres
-    finger_len: Dict[str, float]                       # metres, thumb from CMC, fingers from MCP
-    pinch_gap: Optional[float] = None                  # metres between tips when actually pinching
+    palm_width: float  # metres
+    finger_len: dict[str, float]  # metres, thumb from CMC, fingers from MCP
+    pinch_gap: float | None = None  # metres between tips when actually pinching
     name: str = ""
 
     def save(self, path: Path = PROFILE_FILE) -> None:
@@ -36,13 +36,17 @@ class HandProfile:
         path.write_text(json.dumps(asdict(self), indent=2) + "\n")
 
     @classmethod
-    def load(cls, path: Path = PROFILE_FILE) -> Optional["HandProfile"]:
+    def load(cls, path: Path = PROFILE_FILE) -> HandProfile | None:
         p = Path(path)
         if not p.exists():
             return None
         d = json.loads(p.read_text())
-        return cls(float(d["palm_width"]), {k: float(v) for k, v in d["finger_len"].items()},
-                   None if d.get("pinch_gap") is None else float(d["pinch_gap"]), d.get("name", ""))
+        return cls(
+            float(d["palm_width"]),
+            {k: float(v) for k, v in d["finger_len"].items()},
+            None if d.get("pinch_gap") is None else float(d["pinch_gap"]),
+            d.get("name", ""),
+        )
 
     def describe(self) -> str:
         rows = [f"palm width  {self.palm_width * 1000:5.1f} mm"]
@@ -53,7 +57,7 @@ class HandProfile:
         return "\n".join(rows)
 
 
-def measure_open(frames: Sequence[np.ndarray]) -> Dict[str, float]:
+def measure_open(frames: Sequence[np.ndarray]) -> dict[str, float]:
     """Lengths from frames of a flat, open hand (median over frames)."""
     pts = np.asarray(frames, dtype=np.float64)
     palm = np.linalg.norm(pts[:, MCP["index"]] - pts[:, MCP["pinky"]], axis=1)

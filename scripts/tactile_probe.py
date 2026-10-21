@@ -32,8 +32,10 @@ def main() -> int:
             pressure = sdk.get_finger_pressure(sid)
             normal = sdk.get_finger_normal_force(sid)
             direction = sdk.get_finger_force_direction(sid)
-            print(f"{sid:2d} {name:10s} max_p={max(pressure):.2f} nf={normal:.2f} "
-                  f"dir={direction:.0f} p={[round(x, 2) for x in pressure]}")
+            print(
+                f"{sid:2d} {name:10s} max_p={max(pressure):.2f} nf={normal:.2f} "
+                f"dir={direction:.0f} p={[round(x, 2) for x in pressure]}"
+            )
     finally:
         hand.disconnect()
     return 0
